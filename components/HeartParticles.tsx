@@ -1,5 +1,6 @@
 import React, { useMemo, useRef, useState, useEffect } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
+import { Text } from '@react-three/drei';
 import * as THREE from 'three';
 import { useStore } from '../store';
 import { easing } from 'maath';
@@ -12,7 +13,10 @@ const HeartParticles: React.FC<HeartParticlesProps> = () => {
   const photos = useStore((state) => state.photos);
   const handState = useStore((state) => state.handState);
   const isGalleryMode = useStore((state) => state.isGalleryMode);
+  const hiddenMessage = useStore((state) => state.hiddenMessage);
+  
   const groupRef = useRef<THREE.Group>(null);
+  const textRef = useRef<any>(null); // Ref for the Text component
   const { viewport, camera } = useThree();
 
   // Increase placeholder count to 80 for a much clearer shape
@@ -84,7 +88,37 @@ const HeartParticles: React.FC<HeartParticlesProps> = () => {
         groupRef.current.rotation.y += 0.15 * delta * (1.1 - targetTension);
     }
 
+    // ANIMATE TEXT
+    if (textRef.current) {
+        // Text is visible when tension is HIGH (Open Hand) and NOT in Gallery Mode
+        // We want it to fade in only when the heart is significantly opened (> 0.4 tension)
+        let textOpacity = 0;
+        let textScale = 0;
+        
+        if (!isGalleryMode && handState.detected) {
+             textOpacity = Math.max(0, (targetTension - 0.3) * 1.5); // Starts appearing at 0.3
+             textScale = 1 + (targetTension * 0.5);
+        } else if (!handState.detected && !isGalleryMode) {
+             // Idle state logic? maybe hidden
+             textOpacity = 0;
+        }
+
+        // Apply
+        const textMat = textRef.current.material; // Generic ref access
+        if (textMat) {
+             easing.damp(textMat, 'opacity', textOpacity, 0.4, delta);
+        }
+        easing.damp3(textRef.current.scale, [textScale, textScale, textScale], 0.4, delta);
+        
+        // Bobbing motion for text
+        textRef.current.position.y = Math.sin(state.clock.elapsedTime * 1.5) * 0.2;
+    }
+
     groupRef.current.children.forEach((child, i) => {
+      // Skip the Text mesh which is the last child usually, but better to check type or use separate loop.
+      // Since particles are mapped to indices, we just check bounds.
+      if (i >= particles.length) return;
+
       const particle = particles[i];
       if (!particle) return;
 
@@ -112,7 +146,9 @@ const HeartParticles: React.FC<HeartParticlesProps> = () => {
           targetRotation.copy(mesh.rotation); // Capture the lookAt rotation
       } 
       else if (targetTension > 0.88) {
-        // MODE: REVEAL SINGLE PHOTO
+        // MODE: REVEAL SINGLE PHOTO (Focus)
+        // If focusing on one photo, the text should probably fade out or move back?
+        // Let's keep the text visible behind the main photo or just hide particles
         if (i === 0) {
             targetPos.set(0, 0, 7); 
             const s = Math.min(viewport.width, viewport.height) * 0.45;
@@ -121,23 +157,25 @@ const HeartParticles: React.FC<HeartParticlesProps> = () => {
             targetEmissive.setRGB(0,0,0);
             targetRotation.set(0, -groupRef.current.rotation.y, 0); // Cancel parent rotation
         } else {
-            targetPos.copy(particle.explodedPosition).multiplyScalar(3.5);
+            targetPos.copy(particle.explodedPosition).multiplyScalar(4.5); // Explode further out
             targetScale.set(0, 0, 0);
             targetOpacity = 0;
             targetRotation.copy(particle.rotation);
         }
       } 
       else if (targetTension > 0.25) {
-         // MODE: EXPANDING
+         // MODE: EXPANDING (Reveals the Text in center)
          const expansionFactor = (targetTension - 0.25) / 0.63;
+         // Push particles outwards to make room for text
          targetPos.lerpVectors(particle.position, particle.explodedPosition, expansionFactor);
+         
          targetScale.set(1.2, 1.2, 1.2);
          targetOpacity = 0.8;
          targetEmissive.setRGB(expansionFactor * 0.3, expansionFactor * 0.1, expansionFactor * 0.2);
          targetRotation.copy(particle.rotation);
       }
       else {
-         // MODE: CONTRACTED HEART
+         // MODE: CONTRACTED HEART (Hides the Text)
          targetPos.copy(particle.position);
          const pulse = Math.sin(state.clock.elapsedTime * 2) * 0.05;
          targetScale.set(0.4 + pulse, 0.4 + pulse, 0.4 + pulse);
@@ -154,10 +192,6 @@ const HeartParticles: React.FC<HeartParticlesProps> = () => {
       if (!isGalleryMode) {
          easing.dampE(mesh.rotation, targetRotation, 0.4, delta);
       } else {
-          // For gallery, we updated rotation via lookAt above, but we want smooth transition TO it
-          // However, lookAt is frame-dependent on camera. 
-          // Simplification: Direct update for gallery lookAt is cleaner.
-          // But to smooth transition IN:
            mesh.rotation.copy(targetRotation);
       }
 
@@ -174,6 +208,29 @@ const HeartParticles: React.FC<HeartParticlesProps> = () => {
       {activePhotos.map((photo, i) => (
         <PhotoMesh key={photo.id} url={photo.url} />
       ))}
+      
+      {/* The Hidden Message */}
+      <Text
+        ref={textRef}
+        font="https://fonts.gstatic.com/s/inter/v12/UcCO3FwrK3iLTeHuS_fvQtMwCp50KnMw2boKoduKmMEVuLyfAZ9hjp-Ek-_EeA.woff"
+        fontSize={1.5}
+        letterSpacing={-0.05}
+        color="#ffccdd"
+        anchorX="center"
+        anchorY="middle"
+        outlineWidth={0.05}
+        outlineColor="#ff0055"
+      >
+        {hiddenMessage}
+        <meshStandardMaterial 
+            toneMapped={false} 
+            emissive="#ff0055" 
+            emissiveIntensity={3} 
+            transparent 
+            opacity={0} 
+            depthWrite={false} // Ensure it renders cleanly behind semi-transparent images if needed
+        />
+      </Text>
     </group>
   );
 };

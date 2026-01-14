@@ -17,4 +17,6 @@ export const useStore = create<AppState>((set) => ({
   setGalleryMode: (isGallery) => set({ isGalleryMode: isGallery }),
   isCameraReady: false,
   setCameraReady: (ready) => set({ isCameraReady: ready }),
+  hiddenMessage: "I Love You",
+  setHiddenMessage: (msg) => set({ hiddenMessage: msg }),
 }));

@@ -20,4 +20,6 @@ export type AppState = {
   setGalleryMode: (isGallery: boolean) => void;
   isCameraReady: boolean;
   setCameraReady: (ready: boolean) => void;
+  hiddenMessage: string;
+  setHiddenMessage: (msg: string) => void;
 };

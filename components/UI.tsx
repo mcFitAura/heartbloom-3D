@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import { useStore } from '../store';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -9,6 +9,11 @@ const UI: React.FC = () => {
   const handState = useStore((state) => state.handState);
   const isGalleryMode = useStore((state) => state.isGalleryMode);
   const isCameraReady = useStore((state) => state.isCameraReady);
+  
+  // Hidden Message State
+  const hiddenMessage = useStore((state) => state.hiddenMessage);
+  const setHiddenMessage = useStore((state) => state.setHiddenMessage);
+  const [isEditingMsg, setIsEditingMsg] = useState(false);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
@@ -29,13 +34,42 @@ const UI: React.FC = () => {
       
       {/* Header */}
       <div className="flex justify-between items-start pointer-events-auto">
-        <div>
-          <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-pink-500 to-violet-500">
-            HeartBloom 3D
-          </h1>
-          <p className="text-white/60 text-sm mt-1 max-w-xs">
-            A gesture-controlled memory archive.
-          </p>
+        <div className="flex flex-col gap-2">
+          <div>
+            <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-pink-500 to-violet-500">
+              HeartBloom 3D
+            </h1>
+            <p className="text-white/60 text-sm mt-1 max-w-xs">
+              A gesture-controlled memory archive.
+            </p>
+          </div>
+
+          {/* Secret Message Input */}
+          <div className="flex items-center gap-2 mt-2">
+            {isEditingMsg ? (
+                <form 
+                    onSubmit={(e) => { e.preventDefault(); setIsEditingMsg(false); }} 
+                    className="flex gap-2 items-center"
+                >
+                    <input 
+                        type="text" 
+                        value={hiddenMessage}
+                        onChange={(e) => setHiddenMessage(e.target.value)}
+                        className="bg-black/50 border border-pink-500/50 rounded px-3 py-1 text-white text-sm outline-none focus:ring-1 focus:ring-pink-500 w-40"
+                        autoFocus
+                        onBlur={() => setIsEditingMsg(false)}
+                    />
+                </form>
+            ) : (
+                <button 
+                    onClick={() => setIsEditingMsg(true)}
+                    className="text-pink-300/80 hover:text-pink-300 text-xs transition-colors flex items-center gap-1 border border-pink-500/30 rounded-full px-2 py-1 bg-pink-500/10"
+                >
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
+                    Msg: "{hiddenMessage}"
+                </button>
+            )}
+          </div>
         </div>
 
         <button 
@@ -67,7 +101,7 @@ const UI: React.FC = () => {
              <div className={`transition-all duration-500 ${handState.detected || isGalleryMode ? 'opacity-0' : 'opacity-100'} text-center`}>
                  <div className="animate-pulse bg-black/40 backdrop-blur px-6 py-3 rounded-xl border border-white/10">
                      <p className="text-lg font-medium text-pink-300">Raise your hand</p>
-                     <p className="text-xs text-white/50">One hand for Heart • Two hands for Gallery</p>
+                     <p className="text-xs text-white/50">Open hand to reveal the secret</p>
                  </div>
              </div>
          )}
@@ -81,14 +115,14 @@ const UI: React.FC = () => {
            ) : (
              <>
                Tension: {(handState.tension * 100).toFixed(0)}% <br/>
-               Status: {handState.detected ? (handState.tension > 0.8 ? 'Expanded' : (handState.tension > 0.3 ? 'Expanding' : 'Contracted')) : 'Idle'}
+               Status: {handState.detected ? (handState.tension > 0.8 ? 'Expanded' : (handState.tension > 0.3 ? 'Revealing...' : 'Secret Hidden')) : 'Idle'}
              </>
            )}
         </div>
 
         <div className="max-w-xs text-right text-xs text-white/40">
            <strong>Instructions:</strong><br/>
-           One Hand: Open/Close to pump heart<br/>
+           One Hand: Open hand to reveal message<br/>
            Two Hands: Show all photos (Gallery)
         </div>
       </div>
