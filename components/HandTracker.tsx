@@ -25,9 +25,21 @@ const HandTracker: React.FC = () => {
   const setGalleryMode = useStore((state) => state.setGalleryMode);
   const setCameraReady = useStore((state) => state.setCameraReady);
   const [error, setError] = useState<string | null>(null);
+  const [handsLoaded, setHandsLoaded] = useState(false);
+
+  // Poll for window.Hands availability
+  useEffect(() => {
+    const checkHands = setInterval(() => {
+      if (window.Hands) {
+        setHandsLoaded(true);
+        clearInterval(checkHands);
+      }
+    }, 100);
+    return () => clearInterval(checkHands);
+  }, []);
 
   useEffect(() => {
-    if (!videoRef.current || !window.Hands) return;
+    if (!handsLoaded || !videoRef.current) return;
 
     let hands: any = null;
     let stream: MediaStream | null = null;
@@ -42,48 +54,43 @@ const HandTracker: React.FC = () => {
       });
 
       hands.setOptions({
-        maxNumHands: 2, // Enable tracking for 2 hands
+        maxNumHands: 2,
         modelComplexity: 1,
         minDetectionConfidence: 0.5,
         minTrackingConfidence: 0.5,
       });
 
       hands.onResults((results: Results) => {
+        if (!isRunning) return;
+        
         const numHands = results.multiHandLandmarks ? results.multiHandLandmarks.length : 0;
         
-        // Logic: 2 Hands = Gallery Mode
-        if (numHands >= 2) {
-            setGalleryMode(true);
-        } else {
-            setGalleryMode(false);
-        }
+        setGalleryMode(numHands >= 2);
 
-        if (numHands > 0) {
-          // Use the first detected hand for tension control
+        if (numHands > 0 && results.multiHandLandmarks[0]) {
           const landmarks = results.multiHandLandmarks[0];
+          if (!landmarks[4] || !landmarks[8] || !landmarks[0] || !landmarks[9]) return;
 
           // Key landmarks
           const thumbTip = landmarks[4];
           const indexTip = landmarks[8];
           const wrist = landmarks[0];
-          const middleFingerMCP = landmarks[9]; // Base of middle finger
+          const middleFingerMCP = landmarks[9];
 
           // Calculate Euclidean distance between thumb and index
-          const distance = Math.sqrt(
-            Math.pow(thumbTip.x - indexTip.x, 2) +
-            Math.pow(thumbTip.y - indexTip.y, 2) +
-            Math.pow(thumbTip.z - indexTip.z, 2)
-          );
+          const dx = thumbTip.x - indexTip.x;
+          const dy = thumbTip.y - indexTip.y;
+          const dz = thumbTip.z - indexTip.z;
+          const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
 
           // Normalize using palm size
-          const palmSize = Math.sqrt(
-            Math.pow(wrist.x - middleFingerMCP.x, 2) +
-            Math.pow(wrist.y - middleFingerMCP.y, 2) +
-            Math.pow(wrist.z - middleFingerMCP.z, 2)
-          );
+          const pdx = wrist.x - middleFingerMCP.x;
+          const pdy = wrist.y - middleFingerMCP.y;
+          const pdz = wrist.z - middleFingerMCP.z;
+          const palmSize = Math.sqrt(pdx * pdx + pdy * pdy + pdz * pdz);
           
           // Calculate tension
-          let normalizedTension = (distance / palmSize - 0.2);
+          let normalizedTension = (distance / (palmSize || 0.1) - 0.2);
           normalizedTension = Math.max(0, Math.min(1, normalizedTension));
 
           setHandState({
@@ -102,12 +109,11 @@ const HandTracker: React.FC = () => {
         if (!isRunning || !hands) return;
         const video = videoRef.current;
         
-        // Strictly check if video is ready to prevent timeouts in MediaPipe
         if (video && video.readyState >= 2 && !video.paused && !video.ended) {
             try {
                 await hands.send({ image: video });
             } catch (err) {
-                console.warn("MediaPipe send warning (dropping frame):", err);
+                // MediaPipe frame drop
             }
         }
         animationFrameId = requestAnimationFrame(onFrame);
@@ -127,22 +133,16 @@ const HandTracker: React.FC = () => {
             
             if (videoRef.current) {
                 videoRef.current.srcObject = stream;
-                // Wait for metadata to ensure dimensions are known
-                await new Promise<void>((resolve) => {
-                    if (videoRef.current) {
-                        videoRef.current.onloadedmetadata = () => resolve();
-                    } else {
-                        resolve();
-                    }
-                });
-                
-                await videoRef.current.play();
-                setCameraReady(true);
-                onFrame();
+                videoRef.current.onloadedmetadata = () => {
+                    videoRef.current?.play().then(() => {
+                        setCameraReady(true);
+                        onFrame();
+                    }).catch(e => console.warn("Video playback blocked:", e));
+                };
             }
         } catch (e) {
             console.error(e);
-            setError("Could not start camera. Please allow permissions.");
+            setError("Camera permission denied.");
         }
     };
 
@@ -158,21 +158,20 @@ const HandTracker: React.FC = () => {
           hands.close();
       }
     };
-  }, [setHandState, setGalleryMode, setCameraReady]);
+  }, [handsLoaded, setHandState, setGalleryMode, setCameraReady]);
 
   return (
     <div className="fixed top-4 right-4 z-50 w-32 h-24 overflow-hidden rounded-lg border border-white/20 bg-black/50 shadow-lg backdrop-blur-sm transition-opacity duration-300 opacity-80 hover:opacity-100">
-        {error && <div className="text-red-500 text-xs p-2">{error}</div>}
+        {error && <div className="text-red-400 text-[10px] p-2 leading-tight font-sans">{error}</div>}
+        {!handsLoaded && !error && <div className="text-white/50 text-[10px] p-2 absolute top-0 left-0">Loading AI...</div>}
       <video
         ref={videoRef}
-        className="w-full h-full object-cover transform -scale-x-100" // Mirror for user intuition
+        className="w-full h-full object-cover transform -scale-x-100"
         playsInline
         muted
         autoPlay
       />
-      <div className="absolute bottom-1 left-2 text-[10px] text-white/70 font-mono">
-        Hand Tracking
-      </div>
+      <div className="absolute bottom-1 left-2 text-[8px] text-white/50 font-mono">TRACKER</div>
     </div>
   );
 };

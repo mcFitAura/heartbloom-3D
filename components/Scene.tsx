@@ -1,7 +1,7 @@
 import React from 'react';
 import { Canvas } from '@react-three/fiber';
 import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing';
-import { OrbitControls, Sparkles } from '@react-three/drei';
+import { OrbitControls, Sparkles, Float } from '@react-three/drei';
 import HeartParticles from './HeartParticles';
 import { useStore } from '../store';
 
@@ -10,55 +10,50 @@ const Scene: React.FC = () => {
 
   return (
     <Canvas
-      camera={{ position: [0, 0, 12], fov: 45 }}
-      gl={{ antialias: false, alpha: false }}
+      camera={{ position: [0, 0, 15], fov: 45 }}
+      gl={{ 
+        antialias: true,
+        alpha: false,
+        stencil: false,
+        depth: true,
+        powerPreference: "high-performance"
+      }}
       dpr={[1, 2]}
     >
-      <color attach="background" args={['#050505']} />
+      <color attach="background" args={['#080406']} />
       
-      {/* Lighting */}
-      <ambientLight intensity={0.5} />
-      <pointLight position={[10, 10, 10]} intensity={1} />
-      <pointLight position={[-10, -10, -10]} intensity={0.5} color="#ff0055" />
-
-      <HeartParticles />
+      <ambientLight intensity={0.7} />
+      <pointLight position={[10, 10, 10]} intensity={2.5} color="#ffffff" />
+      <pointLight position={[-10, -5, 5]} intensity={1.5} color="#ff0066" />
       
-      {/* Atmospheric Sparkles */}
+      <Float speed={2} rotationIntensity={0.2} floatIntensity={0.4}>
+        <HeartParticles />
+      </Float>
+      
       <Sparkles 
-        count={150} 
-        scale={12} 
-        size={2} 
-        speed={0.4} 
-        opacity={0.5} 
-        color="#ffb6c1" 
-      />
-      
-      {/* Secondary darker sparkles for depth */}
-      <Sparkles 
-        count={100} 
-        scale={15} 
-        size={5} 
-        speed={0.2} 
-        opacity={0.2} 
-        color="#60a5fa" 
+        count={200} 
+        scale={20} 
+        size={1.5} 
+        speed={0.3} 
+        opacity={0.4} 
+        color="#ffccdd" 
       />
 
-      {/* Controls - Disable user interaction if gestures are active to prevent conflict */}
       <OrbitControls 
         enableZoom={false} 
         enablePan={false} 
-        autoRotate={isGalleryMode} // Auto rotate only works nicely if OrbitControls isn't fighting local rotation
+        autoRotate={isGalleryMode}
         autoRotateSpeed={0.5}
-        enableRotate={!isGalleryMode} // Disable manual rotation in gallery mode to let the auto-spin work
+        enableRotate={!isGalleryMode}
       />
 
-      {/* Post Processing */}
-      <EffectComposer enableNormalPass={false}>
+      <EffectComposer multisampling={4}>
         <Bloom 
           luminanceThreshold={0.5} 
-          intensity={1.2} 
+          intensity={0.8} 
+          mipmapBlur
         />
-        <Vignette eskil={false} offset={0.1} darkness={1.1} />
+        <Vignette darkness={0.8} offset={0.2} />
       </EffectComposer>
     </Canvas>
   );

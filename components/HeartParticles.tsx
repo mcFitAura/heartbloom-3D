@@ -1,274 +1,238 @@
 import React, { useMemo, useRef, useState, useEffect } from 'react';
-import { useFrame, useThree } from '@react-three/fiber';
-import { Text } from '@react-three/drei';
+import { useFrame, useThree, ThreeElements } from '@react-three/fiber';
+import { Text, Environment } from '@react-three/drei';
 import * as THREE from 'three';
 import { useStore } from '../store';
 import { easing } from 'maath';
 
-interface HeartParticlesProps {
-  count?: number;
-}
-
-const HeartParticles: React.FC<HeartParticlesProps> = () => {
+const HeartParticles: React.FC = () => {
   const photos = useStore((state) => state.photos);
   const handState = useStore((state) => state.handState);
   const isGalleryMode = useStore((state) => state.isGalleryMode);
   const hiddenMessage = useStore((state) => state.hiddenMessage);
   
   const groupRef = useRef<THREE.Group>(null);
-  const textRef = useRef<any>(null); // Ref for the Text component
+  const textRef = useRef<any>(null); 
   const { viewport, camera } = useThree();
 
-  // Increase placeholder count to 80 for a much clearer shape
+  const PARTICLE_COUNT = 30;
+  const isPortrait = viewport.width < viewport.height;
+
+  // Distribute active photos among particles
   const activePhotos = useMemo(() => {
-    if (photos.length > 0) return photos;
-    return Array.from({ length: 80 }).map((_, i) => ({
-      id: `placeholder-${i}`,
-      url: `https://picsum.photos/seed/${i + 15}/300/300`
-    }));
+    // If we have photos (from store), use them.
+    // The store now initializes with the user's 30 presets, so this should always be populated.
+    const sourcePhotos = photos.length > 0 ? photos : [];
+    const result = [];
+
+    // Map the 30 source photos to the 30 particles
+    for (let i = 0; i < PARTICLE_COUNT; i++) {
+        // Use modulus just in case photos length != 30, though it should be.
+        const photo = sourcePhotos[i % sourcePhotos.length];
+        if (photo) {
+          result.push({ ...photo, id: `particle-${i}-${photo.id}` });
+        }
+    }
+    return result;
   }, [photos]);
 
-  // Generate Positions (Heart & Gallery Sphere)
   const particles = useMemo(() => {
     const temp = [];
-    const count = activePhotos.length;
-    
-    // Golden angle for Fibonacci sphere
-    const phi = Math.PI * (3 - Math.sqrt(5));
+    const getHeartPos = (t: number, scale: number) => {
+        const x = 16 * Math.pow(Math.sin(t), 3);
+        const y = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t);
+        return new THREE.Vector3(x * scale, y * scale, 0);
+    };
 
-    for (let i = 0; i < count; i++) {
-      // --- Heart Calculation ---
-      const t = (i / count) * Math.PI * 2 - Math.PI; 
-      const hx = 16 * Math.pow(Math.sin(t), 3);
-      const hy = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t);
-      const hzDepth = 4 * Math.cos(t); 
-      const hz = (Math.random() - 0.5) * Math.abs(hzDepth);
-      const heartScale = 0.35;
+    for (let i = 0; i < PARTICLE_COUNT; i++) {
+        let pos = new THREE.Vector3();
+        if (i < 16) {
+            const t = (i / 16) * Math.PI * 2;
+            pos = getHeartPos(t, 0.35); 
+            pos.z = 0;
+        } else if (i < 26) {
+            const t = ((i - 16) / 10) * Math.PI * 2 + 0.3;
+            pos = getHeartPos(t, 0.20);
+            pos.z = 0.5;
+        } else {
+            const t = ((i - 26) / 4) * Math.PI * 2;
+            pos = getHeartPos(t, 0.08);
+            pos.z = 0.8;
+        }
+        pos.z += (Math.random() - 0.5) * 0.5;
 
-      // --- Sphere Calculation (Gallery Mode) ---
-      // Fibonacci sphere distribution for even spread
-      const y = 1 - (i / (count - 1)) * 2; // y goes from 1 to -1
-      const radius = Math.sqrt(1 - y * y);
-      const theta = phi * i;
-      const sx = Math.cos(theta) * radius;
-      const sz = Math.sin(theta) * radius;
-      const sphereRadius = 8; // Size of the gallery sphere
+        const rotX = (Math.random() - 0.5) * 0.2;
+        const rotY = (Math.random() - 0.5) * 0.2;
+        const rotZ = (Math.random() - 0.5) * 0.05;
 
-      temp.push({
-        position: new THREE.Vector3(hx * heartScale, hy * heartScale, hz * heartScale),
-        rotation: new THREE.Euler(
-            (Math.random() - 0.5) * 0.4, 
-            (Math.random() - 0.5) * 0.4, 
-            (Math.random() - 0.5) * 0.2
-        ),
-        explodedPosition: new THREE.Vector3(
-          (Math.random() - 0.5) * 22,
-          (Math.random() - 0.5) * 22,
-          (Math.random() - 0.5) * 12
-        ),
-        galleryPosition: new THREE.Vector3(sx * sphereRadius, y * sphereRadius, sz * sphereRadius)
-      });
+        const phi = Math.acos(-1 + (2 * i) / PARTICLE_COUNT);
+        const theta = Math.sqrt(PARTICLE_COUNT * Math.PI) * phi;
+        const r = 8;
+        const gx = r * Math.cos(theta) * Math.sin(phi);
+        const gy = r * Math.sin(theta) * Math.sin(phi);
+        const gz = r * Math.cos(phi);
+
+        temp.push({
+            position: pos,
+            rotation: new THREE.Euler(rotX, rotY, rotZ),
+            explodedPosition: pos.clone().multiplyScalar(3).add(new THREE.Vector3(0, 0, 5)),
+            galleryPosition: new THREE.Vector3(gx, gy, gz)
+        });
     }
     return temp;
-  }, [activePhotos]);
+  }, []);
 
   useFrame((state, delta) => {
     if (!groupRef.current) return;
-
-    const targetTension = handState.detected ? handState.tension : 0.5;
+    const targetTension = handState.detected ? handState.tension : 0;
     
-    // ROTATION LOGIC
+    const desiredWidth = Math.min(viewport.width, viewport.height) * 0.8;
+    const responsiveScale = Math.min(desiredWidth / 12, 1.5); 
+
     if (isGalleryMode) {
-        // In gallery mode, auto-rotate slowly to show all photos
         groupRef.current.rotation.y += 0.1 * delta;
-        // Gently correct X rotation back to 0
-        easing.damp(groupRef.current.rotation, 'x', 0, 0.5, delta);
+        const galleryScale = Math.min(viewport.width / 20, 1.2);
+        easing.damp3(groupRef.current.scale, [galleryScale, galleryScale, galleryScale], 0.5, delta);
     } else {
-        // In heart mode, rotation slows down when tense
-        groupRef.current.rotation.y += 0.15 * delta * (1.1 - targetTension);
+        const beat = 1 + Math.sin(state.clock.elapsedTime * 2.5) * 0.05; 
+        const finalScale = responsiveScale * beat;
+        easing.damp3(groupRef.current.scale, [finalScale, finalScale, finalScale], 0.5, delta);
+        groupRef.current.rotation.y += 0.1 * delta * (1.1 - targetTension);
     }
 
-    // ANIMATE TEXT
     if (textRef.current) {
-        // Text is visible when tension is HIGH (Open Hand) and NOT in Gallery Mode
-        // We want it to fade in only when the heart is significantly opened (> 0.4 tension)
         let textOpacity = 0;
-        let textScale = 0;
-        
         if (!isGalleryMode && handState.detected) {
-             textOpacity = Math.max(0, (targetTension - 0.3) * 1.5); // Starts appearing at 0.3
-             textScale = 1 + (targetTension * 0.5);
-        } else if (!handState.detected && !isGalleryMode) {
-             // Idle state logic? maybe hidden
-             textOpacity = 0;
+             textOpacity = Math.max(0, (targetTension - 0.5) * 4);
         }
-
-        // Apply
-        const textMat = textRef.current.material; // Generic ref access
-        if (textMat) {
-             easing.damp(textMat, 'opacity', textOpacity, 0.4, delta);
-        }
-        easing.damp3(textRef.current.scale, [textScale, textScale, textScale], 0.4, delta);
-        
-        // Bobbing motion for text
-        textRef.current.position.y = Math.sin(state.clock.elapsedTime * 1.5) * 0.2;
+        easing.damp(textRef.current.material, 'opacity', textOpacity, 0.3, delta);
+        const textScale = Math.min(viewport.width / 10, 1);
+        textRef.current.scale.set(textScale, textScale, textScale);
     }
 
     groupRef.current.children.forEach((child, i) => {
-      // Skip the Text mesh which is the last child usually, but better to check type or use separate loop.
-      // Since particles are mapped to indices, we just check bounds.
       if (i >= particles.length) return;
-
-      const particle = particles[i];
-      if (!particle) return;
-
       const mesh = child as THREE.Mesh;
-      const material = mesh.material as THREE.MeshStandardMaterial;
-
-      let targetPos = new THREE.Vector3();
-      let targetScale = new THREE.Vector3();
-      let targetOpacity = 0.5;
-      let targetEmissive = new THREE.Color();
-      let targetColor = new THREE.Color(1, 1, 1);
-      let targetRotation = new THREE.Euler();
-
-      // --- STATE MACHINE ---
+      const particle = particles[i];
+      
+      let tPos = new THREE.Vector3();
+      let tScale = new THREE.Vector3();
+      let tRot = new THREE.Euler();
 
       if (isGalleryMode) {
-          // MODE: GALLERY (SPHERE)
-          targetPos.copy(particle.galleryPosition);
-          targetScale.set(1.5, 1.5, 1.5); // Make photos larger in gallery
-          targetOpacity = 1.0;
-          targetEmissive.setRGB(0, 0, 0); // No emissive glow, just plain photo
-          
-          // Make mesh look at the camera
+          tPos.copy(particle.galleryPosition);
+          tScale.set(2, 2, 0.2);
           mesh.lookAt(camera.position);
-          targetRotation.copy(mesh.rotation); // Capture the lookAt rotation
-      } 
-      else if (targetTension > 0.88) {
-        // MODE: REVEAL SINGLE PHOTO (Focus)
-        // If focusing on one photo, the text should probably fade out or move back?
-        // Let's keep the text visible behind the main photo or just hide particles
-        if (i === 0) {
-            targetPos.set(0, 0, 7); 
-            const s = Math.min(viewport.width, viewport.height) * 0.45;
-            targetScale.set(s, s, 1);
-            targetOpacity = 1;
-            targetEmissive.setRGB(0,0,0);
-            targetRotation.set(0, -groupRef.current.rotation.y, 0); // Cancel parent rotation
-        } else {
-            targetPos.copy(particle.explodedPosition).multiplyScalar(4.5); // Explode further out
-            targetScale.set(0, 0, 0);
-            targetOpacity = 0;
-            targetRotation.copy(particle.rotation);
-        }
-      } 
-      else if (targetTension > 0.25) {
-         // MODE: EXPANDING (Reveals the Text in center)
-         const expansionFactor = (targetTension - 0.25) / 0.63;
-         // Push particles outwards to make room for text
-         targetPos.lerpVectors(particle.position, particle.explodedPosition, expansionFactor);
-         
-         targetScale.set(1.2, 1.2, 1.2);
-         targetOpacity = 0.8;
-         targetEmissive.setRGB(expansionFactor * 0.3, expansionFactor * 0.1, expansionFactor * 0.2);
-         targetRotation.copy(particle.rotation);
-      }
-      else {
-         // MODE: CONTRACTED HEART (Hides the Text)
-         targetPos.copy(particle.position);
-         const pulse = Math.sin(state.clock.elapsedTime * 2) * 0.05;
-         targetScale.set(0.4 + pulse, 0.4 + pulse, 0.4 + pulse);
-         targetOpacity = 0.7;
-         targetEmissive.setRGB(2.5, 0.3, 0.6); 
-         targetRotation.copy(particle.rotation);
-      }
-
-      // Apply changes with damping
-      easing.damp3(mesh.position, targetPos, 0.4, delta);
-      easing.damp3(mesh.scale, targetScale, 0.4, delta);
-      
-      // Handle rotation manually since lookAt changes it instantly in Gallery logic
-      if (!isGalleryMode) {
-         easing.dampE(mesh.rotation, targetRotation, 0.4, delta);
+          tRot.copy(mesh.rotation);
+      } else if (targetTension > 0.95) {
+          tPos.copy(particle.explodedPosition);
+          tScale.set(0.5, 0.5, 0.5); 
+          tRot.copy(particle.rotation);
       } else {
-           mesh.rotation.copy(targetRotation);
+          const expansion = 1 + (targetTension * 1.5);
+          tPos.copy(particle.position).multiplyScalar(expansion);
+          const baseSize = responsiveScale < 0.5 ? 1.0 : 1.3; 
+          const s = Math.max(0.5, baseSize - (targetTension * 0.5)); 
+          tScale.set(s, s, s * 0.1); 
+          tRot.copy(particle.rotation);
       }
 
-      if (material) {
-        easing.damp(material, 'opacity', targetOpacity, 0.2, delta);
-        easing.dampC(material.color, targetColor, 0.2, delta);
-        easing.dampC(material.emissive, targetEmissive, 0.1, delta);
+      easing.damp3(mesh.position, tPos, 0.3, delta);
+      easing.damp3(mesh.scale, tScale, 0.3, delta);
+      if (!isGalleryMode) easing.dampE(mesh.rotation, tRot, 0.3, delta);
+      
+      const mats = mesh.material as THREE.Material[];
+      if (mats && mats[4]) {
+          easing.damp(mats[4], 'opacity', 1, 0.2, delta);
       }
     });
   });
 
   return (
-    <group ref={groupRef}>
-      {activePhotos.map((photo, i) => (
-        <PhotoMesh key={photo.id} url={photo.url} />
-      ))}
-      
-      {/* The Hidden Message */}
+    <group>
+      <Environment preset="city" />
+      <group ref={groupRef}>
+        {activePhotos.map((photo, i) => (
+          <AcrylicBlock key={photo.id} url={photo.url} index={i} />
+        ))}
+      </group>
+
       <Text
         ref={textRef}
         font="https://fonts.gstatic.com/s/inter/v12/UcCO3FwrK3iLTeHuS_fvQtMwCp50KnMw2boKoduKmMEVuLyfAZ9hjp-Ek-_EeA.woff"
         fontSize={1.5}
-        letterSpacing={-0.05}
-        color="#ffccdd"
-        anchorX="center"
-        anchorY="middle"
-        outlineWidth={0.05}
-        outlineColor="#ff0055"
+        color="white"
+        textAlign="center"
+        position={[0, 0, 2]} 
+        maxWidth={viewport.width * 0.9}
+        lineHeight={1.2}
       >
         {hiddenMessage}
-        <meshStandardMaterial 
-            toneMapped={false} 
-            emissive="#ff0055" 
-            emissiveIntensity={3} 
-            transparent 
-            opacity={0} 
-            depthWrite={false} // Ensure it renders cleanly behind semi-transparent images if needed
-        />
+        <meshStandardMaterial toneMapped={false} emissive="#ff0066" emissiveIntensity={5} transparent opacity={0} />
       </Text>
     </group>
   );
 };
 
-const PhotoMesh: React.FC<{ url: string }> = ({ url }) => {
-  const materialRef = useRef<THREE.MeshStandardMaterial>(null);
+const AcrylicBlock = React.memo(({ url, index }: { url: string, index: number }) => {
+  const [texture, setTexture] = useState<THREE.Texture | null>(null);
   
   useEffect(() => {
+    let isMounted = true;
     const loader = new THREE.TextureLoader();
-    loader.setCrossOrigin('anonymous');
+    
+    // Only set crossOrigin to anonymous for external URLs (http/https)
+    // Blob URLs (local uploads) should not have this set, or it might fail in some browsers
+    if (!url.startsWith('blob:') && !url.startsWith('data:')) {
+        loader.setCrossOrigin('anonymous');
+    }
+    
+    // Attempt to load
     loader.load(
-      url,
-      (tex) => {
-        tex.colorSpace = THREE.SRGBColorSpace;
-        if (materialRef.current) {
-          materialRef.current.map = tex;
-          materialRef.current.needsUpdate = true;
+        url, 
+        (tex) => {
+            if (isMounted) {
+                tex.colorSpace = THREE.SRGBColorSpace;
+                tex.minFilter = THREE.LinearFilter;
+                tex.center.set(0.5, 0.5);
+                setTexture(tex);
+            }
+        },
+        undefined,
+        (err) => {
+            console.warn(`Failed to load texture: ${url}`, err);
         }
-      },
-      undefined,
-      (err) => {
-        console.warn(`Texture load failed for ${url}`);
-      }
     );
+
+    return () => { isMounted = false; };
   }, [url]);
+
+  const sideColor = "#e6004c"; 
+  const sideOpacity = 0.95;
+  const sideRoughness = 0.2;
+  const sideEmissive = "#660022";
   
   return (
     <mesh>
-      <planeGeometry args={[1, 1]} />
+      <boxGeometry args={[1, 1, 1]} />
+      <meshStandardMaterial attach="material-0" color={sideColor} emissive={sideEmissive} opacity={sideOpacity} transparent roughness={sideRoughness} />
+      <meshStandardMaterial attach="material-1" color={sideColor} emissive={sideEmissive} opacity={sideOpacity} transparent roughness={sideRoughness} />
+      <meshStandardMaterial attach="material-2" color={sideColor} emissive={sideEmissive} opacity={sideOpacity} transparent roughness={sideRoughness} />
+      <meshStandardMaterial attach="material-3" color={sideColor} emissive={sideEmissive} opacity={sideOpacity} transparent roughness={sideRoughness} />
+      
+      {/* Front Face with Texture */}
       <meshStandardMaterial 
-        ref={materialRef}
+        attach="material-4" 
+        map={texture || undefined} 
+        color={texture ? "#ffffff" : "#ffcccc"}
         transparent 
-        side={THREE.DoubleSide}
-        toneMapped={false}
-        color="#ff69b4" 
+        roughness={0.4}
+        envMapIntensity={0.8}
       />
+      
+      <meshStandardMaterial attach="material-5" color={sideColor} emissive={sideEmissive} opacity={sideOpacity} transparent roughness={sideRoughness} />
     </mesh>
   );
-};
+});
 
 export default HeartParticles;
