@@ -5,6 +5,9 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   // GitHub Pages usually deploys to a subdirectory (e.g. /your-repo-name/)
-  // If you are using a custom domain, change this to '/'
-  base: './', 
+  // Using './' ensures assets are loaded relatively, which works for both root and subdirectories.
+  base: './',
+  build: {
+    chunkSizeWarningLimit: 1600,
+  }
 })
