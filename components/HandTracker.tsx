@@ -123,15 +123,24 @@ const HandTracker: React.FC = () => {
         try {
             setupHands();
 
-            stream = await navigator.mediaDevices.getUserMedia({
-                video: {
-                    width: { ideal: 640 },
-                    height: { ideal: 480 },
-                    facingMode: 'user'
-                }
-            });
+            try {
+                // Try specific constraints first
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        width: { ideal: 640 },
+                        height: { ideal: 480 },
+                        facingMode: 'user'
+                    }
+                });
+            } catch (constraintErr) {
+                console.warn("Preferred camera constraints failed, trying basic video.", constraintErr);
+                // Fallback to basic video request if constraints fail
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: true
+                });
+            }
             
-            if (videoRef.current) {
+            if (videoRef.current && stream) {
                 videoRef.current.srcObject = stream;
                 videoRef.current.onloadedmetadata = () => {
                     videoRef.current?.play().then(() => {
@@ -140,9 +149,15 @@ const HandTracker: React.FC = () => {
                     }).catch(e => console.warn("Video playback blocked:", e));
                 };
             }
-        } catch (e) {
-            console.error(e);
-            setError("Camera permission denied.");
+        } catch (e: any) {
+            console.error("Camera start failed:", e);
+            if (e.name === 'NotAllowedError' || e.name === 'PermissionDeniedError') {
+                setError("Permission denied. Allow camera access.");
+            } else if (e.name === 'NotFoundError') {
+                setError("No camera found.");
+            } else {
+                setError("Camera error: " + (e.message || "Unknown"));
+            }
         }
     };
 
@@ -162,7 +177,7 @@ const HandTracker: React.FC = () => {
 
   return (
     <div className="fixed top-4 right-4 z-50 w-32 h-24 overflow-hidden rounded-lg border border-white/20 bg-black/50 shadow-lg backdrop-blur-sm transition-opacity duration-300 opacity-80 hover:opacity-100">
-        {error && <div className="text-red-400 text-[10px] p-2 leading-tight font-sans">{error}</div>}
+        {error && <div className="text-red-400 text-[10px] p-2 leading-tight font-sans bg-black/80 h-full flex items-center justify-center text-center">{error}</div>}
         {!handsLoaded && !error && <div className="text-white/50 text-[10px] p-2 absolute top-0 left-0">Loading AI...</div>}
       <video
         ref={videoRef}

@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>HeartBloom 3D</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Keep MediaPipe via CDN for simplicity with WASM assets -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
     <style>
@@ -13,28 +14,28 @@
       #root { width: 100%; height: 100%; position: relative; }
       ::-webkit-scrollbar { display: none; }
     </style>
-    <script type="importmap">
+  <script type="importmap">
 {
   "imports": {
-    "react": "https://esm.sh/react@18.2.0",
-    "react-dom": "https://esm.sh/react-dom@18.2.0",
-    "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
-    "react/jsx-runtime": "https://esm.sh/react@18.2.0/jsx-runtime",
-    "three": "https://esm.sh/three@0.160.0",
-    "@react-three/fiber": "https://esm.sh/@react-three/fiber@8.15.16?external=react,react-dom,three",
-    "@react-three/drei": "https://esm.sh/@react-three/drei@9.99.0?external=react,react-dom,three,@react-three/fiber",
-    "@react-three/postprocessing": "https://esm.sh/@react-three/postprocessing@2.16.0?external=react,react-dom,three,@react-three/fiber",
-    "uuid": "https://esm.sh/uuid@9.0.1",
-    "zustand": "https://esm.sh/zustand@4.5.0?external=react",
-    "maath": "https://esm.sh/maath@0.10.7?external=react,three",
+    "three": "https://esm.sh/three@^0.182.0",
+    "@react-three/fiber": "https://esm.sh/@react-three/fiber@^9.5.0",
     "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
     "react/": "https://esm.sh/react@^19.2.4/",
-    "heic2any": "https://esm.sh/heic2any@0.0.4"
+    "react": "https://esm.sh/react@^19.2.4",
+    "uuid": "https://esm.sh/uuid@^13.0.0",
+    "zustand": "https://esm.sh/zustand@^5.0.11",
+    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.4",
+    "@react-three/postprocessing": "https://esm.sh/@react-three/postprocessing@^3.0.4",
+    "heic2any": "https://esm.sh/heic2any@^0.0.4",
+    "maath": "https://esm.sh/maath@^0.10.8",
+    "@react-three/drei": "https://esm.sh/@react-three/drei@^10.7.7",
+    "vite": "https://esm.sh/vite@^7.3.1"
   }
 }
 </script>
-  </head>
+</head>
   <body>
     <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
   </body>
 </html>

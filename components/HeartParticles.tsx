@@ -1,9 +1,18 @@
 import React, { useMemo, useRef, useState, useEffect } from 'react';
-import { useFrame, useThree, ThreeElements } from '@react-three/fiber';
+import { useFrame, useThree } from '@react-three/fiber';
 import { Text, Environment } from '@react-three/drei';
 import * as THREE from 'three';
 import { useStore } from '../store';
 import { easing } from 'maath';
+
+// Fix for React Three Fiber elements not being recognized in JSX
+declare global {
+  namespace JSX {
+    interface IntrinsicElements {
+      [elemName: string]: any;
+    }
+  }
+}
 
 const HeartParticles: React.FC = () => {
   const photos = useStore((state) => state.photos);
@@ -16,18 +25,12 @@ const HeartParticles: React.FC = () => {
   const { viewport, camera } = useThree();
 
   const PARTICLE_COUNT = 30;
-  const isPortrait = viewport.width < viewport.height;
 
   // Distribute active photos among particles
   const activePhotos = useMemo(() => {
-    // If we have photos (from store), use them.
-    // The store now initializes with the user's 30 presets, so this should always be populated.
     const sourcePhotos = photos.length > 0 ? photos : [];
     const result = [];
-
-    // Map the 30 source photos to the 30 particles
     for (let i = 0; i < PARTICLE_COUNT; i++) {
-        // Use modulus just in case photos length != 30, though it should be.
         const photo = sourcePhotos[i % sourcePhotos.length];
         if (photo) {
           result.push({ ...photo, id: `particle-${i}-${photo.id}` });
@@ -41,25 +44,32 @@ const HeartParticles: React.FC = () => {
     const getHeartPos = (t: number, scale: number) => {
         const x = 16 * Math.pow(Math.sin(t), 3);
         const y = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t);
-        return new THREE.Vector3(x * scale, y * scale, 0);
+        return new THREE.Vector3(x * scale, (y + 5) * scale, 0);
     };
 
     for (let i = 0; i < PARTICLE_COUNT; i++) {
         let pos = new THREE.Vector3();
+        let scaleFactor = 1.0;
+
         if (i < 16) {
+            // Outer Ring
             const t = (i / 16) * Math.PI * 2;
             pos = getHeartPos(t, 0.35); 
-            pos.z = 0;
+            pos.z = (Math.random() - 0.5) * 0.2;
+            scaleFactor = 1.0;
         } else if (i < 26) {
+            // Middle Ring
             const t = ((i - 16) / 10) * Math.PI * 2 + 0.3;
-            pos = getHeartPos(t, 0.20);
-            pos.z = 0.5;
+            pos = getHeartPos(t, 0.23); 
+            pos.z = 0.6 + (Math.random() - 0.5) * 0.2; 
+            scaleFactor = 0.8; 
         } else {
+            // Inner Ring
             const t = ((i - 26) / 4) * Math.PI * 2;
-            pos = getHeartPos(t, 0.08);
-            pos.z = 0.8;
+            pos = getHeartPos(t, 0.12); 
+            pos.z = 1.2 + (Math.random() - 0.5) * 0.2; 
+            scaleFactor = 0.6; 
         }
-        pos.z += (Math.random() - 0.5) * 0.5;
 
         const rotX = (Math.random() - 0.5) * 0.2;
         const rotY = (Math.random() - 0.5) * 0.2;
@@ -76,7 +86,8 @@ const HeartParticles: React.FC = () => {
             position: pos,
             rotation: new THREE.Euler(rotX, rotY, rotZ),
             explodedPosition: pos.clone().multiplyScalar(3).add(new THREE.Vector3(0, 0, 5)),
-            galleryPosition: new THREE.Vector3(gx, gy, gz)
+            galleryPosition: new THREE.Vector3(gx, gy, gz),
+            scaleFactor: scaleFactor
         });
     }
     return temp;
@@ -131,8 +142,11 @@ const HeartParticles: React.FC = () => {
       } else {
           const expansion = 1 + (targetTension * 1.5);
           tPos.copy(particle.position).multiplyScalar(expansion);
+          
           const baseSize = responsiveScale < 0.5 ? 1.0 : 1.3; 
-          const s = Math.max(0.5, baseSize - (targetTension * 0.5)); 
+          const individualSize = baseSize * (particle as any).scaleFactor;
+          
+          const s = Math.max(0.4, individualSize - (targetTension * 0.5)); 
           tScale.set(s, s, s * 0.1); 
           tRot.copy(particle.rotation);
       }
@@ -140,11 +154,6 @@ const HeartParticles: React.FC = () => {
       easing.damp3(mesh.position, tPos, 0.3, delta);
       easing.damp3(mesh.scale, tScale, 0.3, delta);
       if (!isGalleryMode) easing.dampE(mesh.rotation, tRot, 0.3, delta);
-      
-      const mats = mesh.material as THREE.Material[];
-      if (mats && mats[4]) {
-          easing.damp(mats[4], 'opacity', 1, 0.2, delta);
-      }
     });
   });
 
@@ -176,33 +185,47 @@ const HeartParticles: React.FC = () => {
 
 const AcrylicBlock = React.memo(({ url, index }: { url: string, index: number }) => {
   const [texture, setTexture] = useState<THREE.Texture | null>(null);
+  const [hasError, setHasError] = useState(false);
   
   useEffect(() => {
     let isMounted = true;
-    const loader = new THREE.TextureLoader();
-    
-    // Only set crossOrigin to anonymous for external URLs (http/https)
-    // Blob URLs (local uploads) should not have this set, or it might fail in some browsers
-    if (!url.startsWith('blob:') && !url.startsWith('data:')) {
-        loader.setCrossOrigin('anonymous');
-    }
-    
-    // Attempt to load
-    loader.load(
-        url, 
-        (tex) => {
-            if (isMounted) {
-                tex.colorSpace = THREE.SRGBColorSpace;
-                tex.minFilter = THREE.LinearFilter;
-                tex.center.set(0.5, 0.5);
-                setTexture(tex);
-            }
-        },
-        undefined,
-        (err) => {
-            console.warn(`Failed to load texture: ${url}`, err);
+    let attempts = 0;
+    const maxAttempts = 3;
+
+    const loadTexture = () => {
+        const loader = new THREE.TextureLoader();
+        // Important: Set crossorigin BEFORE loading to avoid tainted canvas/white textures
+        if (!url.startsWith('blob:') && !url.startsWith('data:')) {
+            loader.setCrossOrigin('anonymous');
         }
-    );
+
+        loader.load(
+            url, 
+            (tex) => {
+                if (isMounted) {
+                    tex.colorSpace = THREE.SRGBColorSpace;
+                    tex.minFilter = THREE.LinearFilter;
+                    tex.generateMipmaps = true;
+                    tex.center.set(0.5, 0.5);
+                    tex.needsUpdate = true;
+                    setTexture(tex);
+                    setHasError(false);
+                }
+            },
+            undefined,
+            (err) => {
+                console.warn(`Load failed for: ${url}`, err);
+                if (isMounted && attempts < maxAttempts) {
+                    attempts++;
+                    setTimeout(loadTexture, 1000 + Math.random() * 500); 
+                } else if (isMounted) {
+                    setHasError(true);
+                }
+            }
+        );
+    };
+
+    loadTexture();
 
     return () => { isMounted = false; };
   }, [url]);
@@ -212,25 +235,36 @@ const AcrylicBlock = React.memo(({ url, index }: { url: string, index: number })
   const sideRoughness = 0.2;
   const sideEmissive = "#660022";
   
+  // Face color logic:
+  // - Loaded: White (allows texture to show true colors)
+  // - Loading: Soft Pink
+  // - Error: Red
+  const faceColor = hasError ? "#ff3333" : (texture ? "#ffffff" : "#ff99aa");
+
+  // Material props for the photo faces
+  const photoMaterialProps = {
+    color: faceColor,
+    transparent: false, // Force opaque to fix z-sorting/visibility
+    roughness: 0.4,
+    map: texture || undefined,
+    envMapIntensity: 0.8,
+    side: THREE.DoubleSide // Ensure visibility from inside/back
+  };
+
   return (
     <mesh>
       <boxGeometry args={[1, 1, 1]} />
+      {/* 0: Right, 1: Left, 2: Top, 3: Bottom - Transparent Acrylic Edges */}
       <meshStandardMaterial attach="material-0" color={sideColor} emissive={sideEmissive} opacity={sideOpacity} transparent roughness={sideRoughness} />
       <meshStandardMaterial attach="material-1" color={sideColor} emissive={sideEmissive} opacity={sideOpacity} transparent roughness={sideRoughness} />
       <meshStandardMaterial attach="material-2" color={sideColor} emissive={sideEmissive} opacity={sideOpacity} transparent roughness={sideRoughness} />
       <meshStandardMaterial attach="material-3" color={sideColor} emissive={sideEmissive} opacity={sideOpacity} transparent roughness={sideRoughness} />
       
-      {/* Front Face with Texture */}
-      <meshStandardMaterial 
-        attach="material-4" 
-        map={texture || undefined} 
-        color={texture ? "#ffffff" : "#ffcccc"}
-        transparent 
-        roughness={0.4}
-        envMapIntensity={0.8}
-      />
+      {/* 4: Front - PHOTO */}
+      <meshStandardMaterial attach="material-4" {...photoMaterialProps} />
       
-      <meshStandardMaterial attach="material-5" color={sideColor} emissive={sideEmissive} opacity={sideOpacity} transparent roughness={sideRoughness} />
+      {/* 5: Back - PHOTO (Duplicate photo on back so rotation doesn't hide it) */}
+      <meshStandardMaterial attach="material-5" {...photoMaterialProps} />
     </mesh>
   );
 });

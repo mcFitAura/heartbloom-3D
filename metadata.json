@@ -2,6 +2,7 @@
   "name": "HeartBloom 3D",
   "description": "A real-time interactive 3D photo heart system controlled by hand gestures. Upload photos and use your hand to breathe life into the memory heart.",
   "requestFramePermissions": [
-    "camera"
+    "camera",
+    "microphone"
   ]
 }
